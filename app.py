@@ -1,8 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
-import psycopg2
-import psycopg2.extras
+import psycopg
 from datetime import datetime, timedelta
 import os
 from collections import defaultdict, Counter
@@ -26,8 +25,8 @@ def get_db_connection():
     """Create database connection with proper error handling for both PostgreSQL and SQLite"""
     try:
         if IS_PRODUCTION:
-            # PostgreSQL connection
-            conn = psycopg2.connect(DATABASE_URL)
+            # PostgreSQL connection with psycopg
+            conn = psycopg.connect(DATABASE_URL)
             conn.autocommit = True
             return conn
         else:
@@ -137,17 +136,22 @@ def execute_query(query, params=None, fetch=False, fetchone=False):
     
     try:
         if IS_PRODUCTION:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor = conn.cursor()
             cursor.execute(query, params or ())
             
             if fetchone:
                 result = cursor.fetchone()
-                return dict(result) if result else None
+                if result:
+                    # Convert tuple to dict for PostgreSQL
+                    columns = [desc[0] for desc in cursor.description]
+                    return dict(zip(columns, result))
+                return None
             elif fetch:
                 results = cursor.fetchall()
-                return [dict(row) for row in results]
+                columns = [desc[0] for desc in cursor.description]
+                return [dict(zip(columns, row)) for row in results]
             else:
-                return cursor.lastrowid if hasattr(cursor, 'lastrowid') else cursor.rowcount
+                return cursor.rowcount
         else:
             if fetchone:
                 result = conn.execute(query, params or ()).fetchone()

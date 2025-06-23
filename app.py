@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
+import psycopg2
+import psycopg2.extras
 from datetime import datetime, timedelta
 import os
 from collections import defaultdict, Counter
@@ -9,16 +11,31 @@ app = Flask(__name__)
 # Use environment variable for secret key in production, fallback for development
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 
-# Database setup
-DATABASE = 'habits.db'
+# Database setup - PostgreSQL for production, SQLite for local development
+DATABASE_URL = os.environ.get('DATABASE_URL')
+IS_PRODUCTION = DATABASE_URL is not None
+
+if IS_PRODUCTION:
+    # Production: Use PostgreSQL
+    DATABASE = DATABASE_URL
+else:
+    # Local development: Use SQLite
+    DATABASE = 'habits.db'
 
 def get_db_connection():
-    """Create database connection with proper error handling"""
+    """Create database connection with proper error handling for both PostgreSQL and SQLite"""
     try:
-        conn = sqlite3.connect(DATABASE)
-        conn.row_factory = sqlite3.Row
-        return conn
-    except sqlite3.Error as e:
+        if IS_PRODUCTION:
+            # PostgreSQL connection
+            conn = psycopg2.connect(DATABASE_URL)
+            conn.autocommit = True
+            return conn
+        else:
+            # SQLite connection
+            conn = sqlite3.connect(DATABASE)
+            conn.row_factory = sqlite3.Row
+            return conn
+    except Exception as e:
         print(f"Database connection error: {e}")
         return None
 
@@ -29,48 +46,123 @@ def init_db():
         return False
     
     try:
-        # Create tables
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        if IS_PRODUCTION:
+            # PostgreSQL table creation
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(255) UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS habits (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    category TEXT NOT NULL,
+                    active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS habit_entries (
+                    id SERIAL PRIMARY KEY,
+                    habit_id INTEGER NOT NULL REFERENCES habits(id),
+                    date DATE NOT NULL,
+                    completed BOOLEAN NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(habit_id, date)
+                )
+            ''')
+            
+        else:
+            # SQLite table creation (existing code)
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS habits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    category TEXT NOT NULL,
+                    active BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+            ''')
+            
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS habit_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    habit_id INTEGER NOT NULL,
+                    date DATE NOT NULL,
+                    completed BOOLEAN NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (habit_id) REFERENCES habits (id),
+                    UNIQUE(habit_id, date)
+                )
+            ''')
+            
+            conn.commit()
         
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS habits (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT,
-                category TEXT NOT NULL,
-                active BOOLEAN DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (id)
-            )
-        ''')
-        
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS habit_entries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                habit_id INTEGER NOT NULL,
-                date DATE NOT NULL,
-                completed BOOLEAN NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (habit_id) REFERENCES habits (id),
-                UNIQUE(habit_id, date)
-            )
-        ''')
-        
-        conn.commit()
         print("Database initialized successfully!")
         return True
         
-    except sqlite3.Error as e:
+    except Exception as e:
         print(f"Database initialization error: {e}")
         return False
+    finally:
+        conn.close()
+
+def execute_query(query, params=None, fetch=False, fetchone=False):
+    """Universal database query executor for both PostgreSQL and SQLite"""
+    conn = get_db_connection()
+    if not conn:
+        return None
+    
+    try:
+        if IS_PRODUCTION:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(query, params or ())
+            
+            if fetchone:
+                result = cursor.fetchone()
+                return dict(result) if result else None
+            elif fetch:
+                results = cursor.fetchall()
+                return [dict(row) for row in results]
+            else:
+                return cursor.lastrowid if hasattr(cursor, 'lastrowid') else cursor.rowcount
+        else:
+            if fetchone:
+                result = conn.execute(query, params or ()).fetchone()
+                return dict(result) if result else None
+            elif fetch:
+                results = conn.execute(query, params or ()).fetchall()
+                return [dict(row) for row in results]
+            else:
+                cursor = conn.execute(query, params or ())
+                conn.commit()
+                return cursor.lastrowid
+                
+    except Exception as e:
+        print(f"Database query error: {e}")
+        return None
     finally:
         conn.close()
 

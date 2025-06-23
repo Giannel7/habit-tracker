@@ -17,9 +17,12 @@ IS_PRODUCTION = DATABASE_URL is not None
 if IS_PRODUCTION:
     # Production: Use PostgreSQL
     DATABASE = DATABASE_URL
+    # SQLite fallback path - use /tmp directory which is writable on Render
+    SQLITE_FALLBACK = '/tmp/habits.db'
 else:
     # Local development: Use SQLite
     DATABASE = 'habits.db'
+    SQLITE_FALLBACK = 'habits.db'
 
 def get_db_connection():
     """Create database connection with proper error handling for both PostgreSQL and SQLite"""
@@ -40,9 +43,9 @@ def get_db_connection():
     
     # Use SQLite (either local development or fallback)
     try:
-        conn = sqlite3.connect(DATABASE)
+        conn = sqlite3.connect(SQLITE_FALLBACK)
         conn.row_factory = sqlite3.Row
-        print("✅ Connected to SQLite successfully!")
+        print(f"✅ Connected to SQLite successfully at {SQLITE_FALLBACK}!")
         return conn
     except Exception as e:
         print(f"❌ SQLite connection error: {e}")

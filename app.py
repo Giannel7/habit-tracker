@@ -23,6 +23,8 @@ else:
 
 def get_db_connection():
     """Create database connection with proper error handling for both PostgreSQL and SQLite"""
+    global IS_PRODUCTION
+    
     # Try PostgreSQL first in production
     if IS_PRODUCTION:
         try:
@@ -34,7 +36,6 @@ def get_db_connection():
             print(f"❌ PostgreSQL connection failed: {e}")
             print("🔄 Falling back to SQLite for now...")
             # Fall back to SQLite if PostgreSQL fails
-            global IS_PRODUCTION
             IS_PRODUCTION = False
     
     # Use SQLite (either local development or fallback)

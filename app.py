@@ -1,7 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
-import psycopg
 from datetime import datetime, timedelta
 import os
 from collections import defaultdict, Counter
@@ -10,45 +9,25 @@ app = Flask(__name__)
 # Use environment variable for secret key in production, fallback for development
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 
-# Database setup - PostgreSQL for production, SQLite for local development
+# Database setup - Use SQLite with fallback to /tmp on Render
 DATABASE_URL = os.environ.get('DATABASE_URL')
 IS_PRODUCTION = DATABASE_URL is not None
 
 if IS_PRODUCTION:
-    # Production: Use PostgreSQL
-    DATABASE = DATABASE_URL
-    # SQLite fallback path - use /tmp directory which is writable on Render
-    SQLITE_FALLBACK = '/tmp/habits.db'
+    # Production: Use SQLite in /tmp (writable on Render)
+    DATABASE = '/tmp/habits.db'
 else:
-    # Local development: Use SQLite
+    # Local development: Use SQLite in current directory
     DATABASE = 'habits.db'
-    SQLITE_FALLBACK = 'habits.db'
 
 def get_db_connection():
-    """Create database connection with proper error handling for both PostgreSQL and SQLite"""
-    global IS_PRODUCTION
-    
-    # Try PostgreSQL first in production
-    if IS_PRODUCTION:
-        try:
-            conn = psycopg.connect(DATABASE_URL)
-            conn.autocommit = True
-            print("✅ Connected to PostgreSQL successfully!")
-            return conn
-        except Exception as e:
-            print(f"❌ PostgreSQL connection failed: {e}")
-            print("🔄 Falling back to SQLite for now...")
-            # Fall back to SQLite if PostgreSQL fails
-            IS_PRODUCTION = False
-    
-    # Use SQLite (either local development or fallback)
+    """Create SQLite database connection with proper error handling"""
     try:
-        conn = sqlite3.connect(SQLITE_FALLBACK)
+        conn = sqlite3.connect(DATABASE)
         conn.row_factory = sqlite3.Row
-        print(f"✅ Connected to SQLite successfully at {SQLITE_FALLBACK}!")
         return conn
     except Exception as e:
-        print(f"❌ SQLite connection error: {e}")
+        print(f"Database connection error: {e}")
         return None
 
 def init_db():
@@ -58,7 +37,7 @@ def init_db():
         return False
     
     try:
-        # Always use SQLite syntax now (since we fall back to SQLite if PostgreSQL fails)
+        # SQLite table creation
         conn.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,7 +83,7 @@ def init_db():
         conn.close()
 
 def execute_query(query, params=None, fetch=False, fetchone=False):
-    """Universal database query executor - now always uses SQLite syntax"""
+    """SQLite database query executor"""
     conn = get_db_connection()
     if not conn:
         return None

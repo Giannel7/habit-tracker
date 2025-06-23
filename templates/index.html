@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Habit Tracker - Build Better Habits</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+        }
+        .hero-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        .btn-primary {
+            background-color: #dc3545;
+            border-color: #dc3545;
+        }
+        .btn-primary:hover {
+            background-color: #bb2d3b;
+            border-color: #bb2d3b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-8 col-lg-6">
+                <div class="hero-card p-5">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-chart-line fa-4x text-primary mb-3"></i>
+                        <h1 class="display-4 fw-bold text-dark">Habit Tracker</h1>
+                        <p class="lead text-muted">Build better habits, one day at a time</p>
+                    </div>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-4 text-center mb-3">
+                            <i class="fas fa-calendar-check fa-2x text-primary mb-2"></i>
+                            <h6>Daily Tracking</h6>
+                            <small class="text-muted">Mark habits complete each day</small>
+                        </div>
+                        <div class="col-md-4 text-center mb-3">
+                            <i class="fas fa-chart-bar fa-2x text-success mb-2"></i>
+                            <h6>Visual Progress</h6>
+                            <small class="text-muted">See your streaks and patterns</small>
+                        </div>
+                        <div class="col-md-4 text-center mb-3">
+                            <i class="fas fa-lightbulb fa-2x text-warning mb-2"></i>
+                            <h6>Smart Insights</h6>
+                            <small class="text-muted">Get personalized recommendations</small>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg">
+                            <i class="fas fa-user-plus me-2"></i>Get Started
+                        </a>
+                        <a href="{{ url_for('login') }}" class="btn btn-outline-secondary">
+                            Already have an account? Sign in
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

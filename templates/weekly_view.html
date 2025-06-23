@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}Weekly View - Habit Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">
+            <i class="fas fa-calendar-week text-primary me-2"></i>Weekly View
+        </h1>
+    </div>
+</div>
+
+<!-- Week Navigation -->
+<div class="week-navigation">
+    <div class="row align-items-center">
+        <div class="col-md-4">
+            <a href="{{ url_for('weekly_view', week=week_offset-1) }}" class="btn btn-outline-primary">
+                <i class="fas fa-chevron-left me-1"></i>Previous Week
+            </a>
+        </div>
+        <div class="col-md-4 text-center">
+            <h5 class="mb-0">
+                {{ week_dates[0].strftime('%B %d') }} - {{ week_dates[6].strftime('%B %d, %Y') }}
+                {% if week_offset == 0 %}
+                    <span class="badge bg-primary ms-2">This Week</span>
+                {% endif %}
+            </h5>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('weekly_view', week=week_offset+1) }}" class="btn btn-outline-primary">
+                Next Week<i class="fas fa-chevron-right ms-1"></i>
+            </a>
+        </div>
+    </div>
+</div>
+
+{% if habits %}
+<!-- Weekly Grid -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-borderless">
+                <thead>
+                    <tr>
+                        <th style="width: 200px;">Habit</th>
+                        {% for date in week_dates %}
+                        <th class="text-center" style="width: 80px;">
+                            <div class="fw-bold">{{ date.strftime('%a') }}</div>
+                            <div class="text-muted small">{{ date.strftime('%m/%d') }}</div>
+                            <!-- Daily success rate -->
+                            {% for day_stat in daily_stats %}
+                                {% if day_stat.date == date %}
+                                    <div class="day-summary mt-1" 
+                                         style="background-color: {% if day_stat.success_rate >= 80 %}#d1e7dd{% elif day_stat.success_rate >= 60 %}#fff3cd{% elif day_stat.success_rate >= 40 %}#ffeaa7{% else %}#f8d7da{% endif %};">
+                                        {{ day_stat.success_rate }}%
+                                        <div class="small">({{ day_stat.completed }}/{{ day_stat.total }})</div>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        </th>
+                        {% endfor %}
+                        <th class="text-center" style="width: 100px;">Week Summary</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for habit_stat in habit_stats %}
+                    <tr class="habit-row">
+                        <td class="align-middle">
+                            <div class="habit-name">{{ habit_stat.habit.name }}</div>
+                            <div class="habit-category">{{ habit_stat.habit.category }}</div>
+                        </td>
+                        {% for date in week_dates %}
+                        <td class="text-center align-middle">
+                            {% set date_str = date.strftime('%Y-%m-%d') %}
+                            {% set habit_id = habit_stat.habit.id %}
+                            {% if habit_id in entries_dict and date_str in entries_dict[habit_id] %}
+                                {% if entries_dict[habit_id][date_str] %}
+                                    <div class="habit-grid-cell completed" 
+                                         data-habit-id="{{ habit_id }}" 
+                                         data-date="{{ date_str }}"
+                                         title="Completed - Click to mark as missed or remove">
+                                        ✓
+                                    </div>
+                                {% else %}
+                                    <div class="habit-grid-cell missed" 
+                                         data-habit-id="{{ habit_id }}" 
+                                         data-date="{{ date_str }}"
+                                         title="Missed - Click to mark as completed or remove">
+                                        ✗
+                                    </div>
+                                {% endif %}
+                            {% else %}
+                                <div class="habit-grid-cell empty" 
+                                     data-habit-id="{{ habit_id }}" 
+                                     data-date="{{ date_str }}"
+                                     title="No entry - Click to mark as completed or missed">
+                                    –
+                                </div>
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                        <td class="text-center align-middle">
+                            <div class="habit-summary" 
+                                 style="background-color: {% if habit_stat.success_rate >= 80 %}#d1e7dd{% elif habit_stat.success_rate >= 60 %}#fff3cd{% elif habit_stat.success_rate >= 40 %}#ffeaa7{% else %}#f8d7da{% endif %};">
+                                {{ habit_stat.success_rate }}%
+                                <div class="small">({{ habit_stat.completed }}/{{ habit_stat.total }})</div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Legend -->
+<div class="row mt-3">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">Legend</h6>
+                <div class="d-flex flex-wrap gap-3">
+                    <div class="d-flex align-items-center">
+                        <div class="habit-grid-cell completed me-2">✓</div>
+                        <span>Completed</span>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="habit-grid-cell missed me-2">✗</div>
+                        <span>Missed</span>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="habit-grid-cell empty me-2">–</div>
+                        <span>No Entry</span>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Click on any cell to cycle through: Empty → Completed → Missed → Empty
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- No Habits Message -->
+<div class="text-center py-5">
+    <div class="card">
+        <div class="card-body">
+            <i class="fas fa-plus-circle fa-4x text-muted mb-3"></i>
+            <h4>No Active Habits</h4>
+            <p class="text-muted">Add some habits to start tracking your progress!</p>
+            <a href="{{ url_for('add_habit') }}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i>Add Your First Habit
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle habit grid cell clicks
+    document.querySelectorAll('.habit-grid-cell').forEach(function(cell) {
+        cell.addEventListener('click', function() {
+            const habitId = this.dataset.habitId;
+            const date = this.dataset.date;
+            
+            // Send AJAX request to toggle habit
+            fetch('/toggle_habit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    habit_id: habitId,
+                    date: date
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update cell appearance based on new status
+                    this.className = 'habit-grid-cell ' + data.status;
+                    
+                    // Update cell content and tooltip
+                    if (data.status === 'completed') {
+                        this.innerHTML = '✓';
+                        this.title = 'Completed - Click to mark as missed or remove';
+                    } else if (data.status === 'missed') {
+                        this.innerHTML = '✗';
+                        this.title = 'Missed - Click to mark as completed or remove';
+                    } else {
+                        this.innerHTML = '–';
+                        this.title = 'No entry - Click to mark as completed or missed';
+                    }
+                    
+                    // Reload page to update summary statistics
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
+                } else {
+                    alert('Error updating habit: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating habit. Please try again.');
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

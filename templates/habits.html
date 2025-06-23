@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Habits - Habit Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-cog text-primary me-2"></i>Manage Habits
+            </h1>
+            <a href="{{ url_for('add_habit') }}" class="btn btn-primary">
+                <i class="fas fa-plus me-1"></i>Add New Habit
+            </a>
+        </div>
+    </div>
+</div>
+
+{% if habits %}
+    <div class="row">
+        {% for habit in habits %}
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 {% if not habit.active %}border-secondary{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="card-title {% if not habit.active %}text-muted{% endif %}">
+                            {{ habit.name }}
+                            {% if not habit.active %}
+                                <span class="badge bg-secondary ms-1">Archived</span>
+                            {% endif %}
+                        </h5>
+                        <span class="badge bg-primary">{{ habit.category }}</span>
+                    </div>
+                    
+                    {% if habit.description %}
+                        <p class="card-text text-muted">{{ habit.description }}</p>
+                    {% endif %}
+                    
+                    <div class="mt-auto">
+                        <small class="text-muted">
+                            Created: {{ habit.created_at.split(' ')[0] if habit.created_at else 'Unknown' }}
+                        </small>
+                        <div class="mt-2">
+                            <a href="{{ url_for('edit_habit', habit_id=habit.id) }}" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-edit me-1"></i>Edit
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="text-center py-5">
+        <div class="card">
+            <div class="card-body">
+                <i class="fas fa-plus-circle fa-4x text-muted mb-3"></i>
+                <h4>No Habits Yet</h4>
+                <p class="text-muted">Create your first habit to start your journey!</p>
+                <a href="{{ url_for('add_habit') }}" class="btn btn-primary">
+                    <i class="fas fa-plus me-1"></i>Add Your First Habit
+                </a>
+            </div>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

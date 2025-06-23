@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics - Habit Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">
+            <i class="fas fa-chart-bar text-primary me-2"></i>Analytics & Insights
+        </h1>
+    </div>
+</div>
+
+<!-- Personalized Recommendations (moved to top) -->
+<div class="analytics-card">
+    <h4 class="mb-3">
+        <i class="fas fa-lightbulb text-primary me-2"></i>Personalized Recommendations
+    </h4>
+    {% if recommendations %}
+        {% for recommendation in recommendations %}
+            <div class="recommendation-item">
+                <i class="fas fa-star me-2"></i>{{ recommendation }}
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="text-muted text-center py-3">
+            <i class="fas fa-chart-line fa-2x mb-2"></i>
+            <p>Keep tracking your habits to get personalized recommendations!</p>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Key Performance Indicators -->
+<div class="row mb-4">
+    <div class="col-md-4 mb-3">
+        <div class="analytics-card text-center">
+            <h5 class="text-muted mb-2">Overall Completion Rate</h5>
+            <div class="display-4 text-primary fw-bold">{{ overall_completion_rate }}%</div>
+            <small class="text-muted">Last 30 days</small>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="analytics-card text-center">
+            <h5 class="text-muted mb-2">Best Day of Week</h5>
+            {% if best_day %}
+                <div class="display-6 text-success fw-bold">{{ best_day.day }}</div>
+                <small class="text-muted">{{ best_day.rate }}% completion rate</small>
+            {% else %}
+                <div class="text-muted">Not enough data</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="analytics-card text-center">
+            <h5 class="text-muted mb-2">Weekly Trend</h5>
+            <div class="h5 fw-bold 
+                {% if 'improvement' in week_trend %}text-success
+                {% elif 'decline' in week_trend %}text-danger
+                {% else %}text-info{% endif %}">
+                {{ week_trend }}
+            </div>
+            <small class="text-muted">
+                This week: {{ this_week_rate }}% | Last week: {{ last_week_rate }}%
+            </small>
+        </div>
+    </div>
+</div>
+
+<!-- Individual Habit Statistics (in list format) -->
+<div class="analytics-card">
+    <h4 class="mb-3">
+        <i class="fas fa-list text-primary me-2"></i>Individual Habit Statistics
+    </h4>
+    {% if habit_stats %}
+        {% for stat in habit_stats %}
+            <div class="habit-stat-item">
+                <div class="row align-items-center">
+                    <div class="col-md-4">
+                        <h6 class="mb-1 fw-bold">{{ stat.habit.name }}</h6>
+                        <small class="text-muted text-uppercase">{{ stat.habit.category }}</small>
+                    </div>
+                    <div class="col-md-2 text-center">
+                        <div class="fw-bold text-primary">{{ stat.current_streak }}</div>
+                        <small class="text-muted">Current Streak</small>
+                    </div>
+                    <div class="col-md-2 text-center">
+                        <div class="fw-bold text-success">{{ stat.longest_streak }}</div>
+                        <small class="text-muted">Best Streak</small>
+                    </div>
+                    <div class="col-md-2 text-center">
+                        <div class="fw-bold text-info">{{ stat.completion_rate }}%</div>
+                        <small class="text-muted">Completion Rate</small>
+                    </div>
+                    <div class="col-md-2 text-center">
+                        <div class="fw-bold text-secondary">{{ stat.total_entries }}</div>
+                        <small class="text-muted">Total Entries</small>
+                    </div>
+                </div>
+                
+                <!-- Progress bar for completion rate -->
+                <div class="progress mt-2" style="height: 6px;">
+                    <div class="progress-bar 
+                        {% if stat.completion_rate >= 80 %}bg-success
+                        {% elif stat.completion_rate >= 60 %}bg-info
+                        {% elif stat.completion_rate >= 40 %}bg-warning
+                        {% else %}bg-danger{% endif %}" 
+                        style="width: {{ stat.completion_rate }}%"></div>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="text-center py-4 text-muted">
+            <i class="fas fa-chart-line fa-3x mb-3"></i>
+            <p>No habit data available yet. Start tracking to see statistics!</p>
+            <a href="{{ url_for('weekly_view') }}" class="btn btn-primary">
+                <i class="fas fa-play me-1"></i>Start Tracking
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Progress Insights -->
+<div class="analytics-card">
+    <h4 class="mb-3">
+        <i class="fas fa-chart-line text-primary me-2"></i>Progress Insights
+    </h4>
+    {% if progress_insights %}
+        {% for insight in progress_insights %}
+            <div class="insight-item">
+                <i class="fas fa-arrow-trend-up me-2"></i>{{ insight }}
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="text-muted text-center py-3">
+            <i class="fas fa-seedling fa-2x mb-2"></i>
+            <p>Keep tracking to unlock progress insights!</p>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Quick Actions -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-bolt text-primary me-2"></i>Quick Actions
+                </h5>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ url_for('weekly_view') }}" class="btn btn-primary">
+                        <i class="fas fa-calendar-week me-1"></i>View Weekly Grid
+                    </a>
+                    <a href="{{ url_for('add_habit') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-plus me-1"></i>Add New Habit
+                    </a>
+                    <a href="{{ url_for('habits') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-cog me-1"></i>Manage Habits
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Analytics Tips -->
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card border-info">
+            <div class="card-body">
+                <h6 class="card-title text-info">
+                    <i class="fas fa-info-circle me-2"></i>Analytics Tips
+                </h6>
+                <ul class="mb-0 small">
+                    <li><strong>Completion Rate:</strong> Aim for 70%+ for sustainable habit building</li>
+                    <li><strong>Streaks:</strong> Focus on consistency over perfection - even 1-day streaks matter!</li>
+                    <li><strong>Best Day:</strong> Use your best-performing day as a template for other days</li>
+                    <li><strong>Weekly Trends:</strong> Small improvements compound over time</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

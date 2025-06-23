@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Habit Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">
+            <i class="fas fa-tachometer-alt text-primary me-2"></i>
+            Welcome back, {{ session.username }}!
+        </h1>
+    </div>
+</div>
+
+<!-- Compact Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="compact-stat-card">
+            <div class="compact-stat-number text-primary">{{ total_habits }}</div>
+            <div class="compact-stat-label">Total Habits</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="compact-stat-card">
+            <div class="compact-stat-number text-success">{{ completed_today }}</div>
+            <div class="compact-stat-label">Completed Today</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="compact-stat-card">
+            <div class="compact-stat-number text-info">{{ completion_rate }}%</div>
+            <div class="compact-stat-label">Completion Rate</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="compact-stat-card">
+            <div class="compact-stat-number text-warning">{{ active_streaks }}</div>
+            <div class="compact-stat-label">
+                Habits with Streaks
+                <i class="fas fa-info-circle ms-1" 
+                   data-bs-toggle="tooltip" 
+                   title="Number of habits that have an active streak (completed for consecutive days)"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-bolt text-primary me-2"></i>Quick Actions
+                </h5>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ url_for('weekly_view') }}" class="btn btn-primary">
+                        <i class="fas fa-check-circle me-1"></i>Track Today's Habits
+                    </a>
+                    <a href="{{ url_for('add_habit') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-plus me-1"></i>Add New Habit
+                    </a>
+                    <a href="{{ url_for('analytics') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-chart-line me-1"></i>View Analytics
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-history text-primary me-2"></i>Recent Activity (Last 7 Days)
+                </h5>
+                
+                {% if recent_entries %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Habit</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in recent_entries[:15] %}
+                                <tr>
+                                    <td>
+                                        <span class="fw-medium">{{ entry.date }}</span>
+                                        {% if entry.date == today_str %}
+                                            <span class="badge bg-secondary ms-1">Today</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ entry.habit_name }}</td>
+                                    <td>
+                                        {% if entry.completed %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check me-1"></i>Completed
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-times me-1"></i>Missed
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    {% if recent_entries|length > 15 %}
+                        <div class="text-center mt-3">
+                            <a href="{{ url_for('analytics') }}" class="btn btn-outline-primary btn-sm">
+                                View More in Analytics
+                            </a>
+                        </div>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="fas fa-calendar-plus fa-3x mb-3"></i>
+                        <p>No recent activity. Start tracking your habits!</p>
+                        <a href="{{ url_for('weekly_view') }}" class="btn btn-primary">
+                            <i class="fas fa-play me-1"></i>Start Tracking
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Getting Started Tips (for new users) -->
+{% if total_habits <= 5 and completion_rate < 50 %}
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card border-info">
+            <div class="card-body">
+                <h5 class="card-title text-info">
+                    <i class="fas fa-lightbulb me-2"></i>Getting Started Tips
+                </h5>
+                <ul class="mb-0">
+                    <li>Start with 2-3 habits and build consistency before adding more</li>
+                    <li>Link new habits to existing routines (e.g., "meditate after coffee")</li>
+                    <li>Check the Weekly View daily to track your progress visually</li>
+                    <li>Review your Analytics weekly to identify patterns and improvements</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Initialize Bootstrap tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    })
+</script>
+{% endblock %}

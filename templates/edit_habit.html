@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Habit - Habit Tracker{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    <i class="fas fa-edit fa-3x text-primary mb-3"></i>
+                    <h2>Edit Habit</h2>
+                    <p class="text-muted">Update your habit details</p>
+                </div>
+                
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Habit Name *</label>
+                        <input type="text" class="form-control" id="name" name="name" 
+                               value="{{ habit.name }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3">{{ habit.description or '' }}</textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="category" class="form-label">Category *</label>
+                        <select class="form-select" id="category" name="category" required>
+                            <option value="Health" {% if habit.category == 'Health' %}selected{% endif %}>Health</option>
+                            <option value="Fitness" {% if habit.category == 'Fitness' %}selected{% endif %}>Fitness</option>
+                            <option value="Learning" {% if habit.category == 'Learning' %}selected{% endif %}>Learning</option>
+                            <option value="Wellness" {% if habit.category == 'Wellness' %}selected{% endif %}>Wellness</option>
+                            <option value="Personal" {% if habit.category == 'Personal' %}selected{% endif %}>Personal</option>
+                            <option value="Work" {% if habit.category == 'Work' %}selected{% endif %}>Work</option>
+                            <option value="Social" {% if habit.category == 'Social' %}selected{% endif %}>Social</option>
+                            <option value="Creative" {% if habit.category == 'Creative' %}selected{% endif %}>Creative</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="active" name="active" 
+                                   {% if habit.active %}checked{% endif %}>
+                            <label class="form-check-label" for="active">
+                                Active (uncheck to archive this habit)
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            Archived habits won't appear in tracking but keep their data
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i>Save Changes
+                        </button>
+                        <a href="{{ url_for('habits') }}" class="btn btn-outline-secondary">
+                            Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

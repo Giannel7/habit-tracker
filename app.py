@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
+import psycopg
 from datetime import datetime, timedelta
 import os
 from collections import defaultdict, Counter
@@ -9,25 +10,46 @@ app = Flask(__name__)
 # Use environment variable for secret key in production, fallback for development
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 
-# Database setup - Use SQLite with fallback to /tmp on Render
+# Database setup - Try PostgreSQL first, fallback to SQLite
 DATABASE_URL = os.environ.get('DATABASE_URL')
 IS_PRODUCTION = DATABASE_URL is not None
+USING_POSTGRESQL = False
 
 if IS_PRODUCTION:
-    # Production: Use SQLite in /tmp (writable on Render)
-    DATABASE = '/tmp/habits.db'
+    # Production: Try PostgreSQL first, fallback to SQLite in /tmp
+    DATABASE = DATABASE_URL
+    SQLITE_FALLBACK = '/tmp/habits.db'
 else:
     # Local development: Use SQLite in current directory
     DATABASE = 'habits.db'
+    SQLITE_FALLBACK = 'habits.db'
 
 def get_db_connection():
-    """Create SQLite database connection with proper error handling"""
+    """Create database connection - try PostgreSQL first, fallback to SQLite"""
+    global USING_POSTGRESQL
+    
+    # Try PostgreSQL first if in production
+    if IS_PRODUCTION and not USING_POSTGRESQL:
+        try:
+            conn = psycopg.connect(DATABASE_URL)
+            conn.autocommit = True
+            USING_POSTGRESQL = True
+            print("✅ Connected to PostgreSQL successfully!")
+            return conn
+        except Exception as e:
+            print(f"❌ PostgreSQL connection failed: {e}")
+            print("🔄 Falling back to SQLite...")
+            USING_POSTGRESQL = False
+    
+    # Use SQLite (either local development or fallback)
     try:
-        conn = sqlite3.connect(DATABASE)
+        db_path = SQLITE_FALLBACK if IS_PRODUCTION else DATABASE
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
+        print(f"✅ Connected to SQLite successfully at {db_path}!")
         return conn
     except Exception as e:
-        print(f"Database connection error: {e}")
+        print(f"❌ SQLite connection error: {e}")
         return None
 
 def init_db():
@@ -37,42 +59,79 @@ def init_db():
         return False
     
     try:
-        # SQLite table creation
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        if USING_POSTGRESQL:
+            # PostgreSQL table creation
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(255) UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS habits (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    category TEXT NOT NULL,
+                    active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS habit_entries (
+                    id SERIAL PRIMARY KEY,
+                    habit_id INTEGER NOT NULL REFERENCES habits(id),
+                    date DATE NOT NULL,
+                    completed BOOLEAN NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(habit_id, date)
+                )
+            ''')
+        else:
+            # SQLite table creation
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS habits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    category TEXT NOT NULL,
+                    active BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+            ''')
+            
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS habit_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    habit_id INTEGER NOT NULL,
+                    date DATE NOT NULL,
+                    completed BOOLEAN NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (habit_id) REFERENCES habits (id),
+                    UNIQUE(habit_id, date)
+                )
+            ''')
+            
+            conn.commit()
         
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS habits (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT,
-                category TEXT NOT NULL,
-                active BOOLEAN DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (id)
-            )
-        ''')
-        
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS habit_entries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                habit_id INTEGER NOT NULL,
-                date DATE NOT NULL,
-                completed BOOLEAN NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (habit_id) REFERENCES habits (id),
-                UNIQUE(habit_id, date)
-            )
-        ''')
-        
-        conn.commit()
         print("Database initialized successfully!")
         return True
         
@@ -83,22 +142,41 @@ def init_db():
         conn.close()
 
 def execute_query(query, params=None, fetch=False, fetchone=False):
-    """SQLite database query executor"""
+    """Universal database query executor for both PostgreSQL and SQLite"""
     conn = get_db_connection()
     if not conn:
         return None
     
     try:
-        if fetchone:
-            result = conn.execute(query, params or ()).fetchone()
-            return dict(result) if result else None
-        elif fetch:
-            results = conn.execute(query, params or ()).fetchall()
-            return [dict(row) for row in results]
+        if USING_POSTGRESQL:
+            cursor = conn.cursor()
+            cursor.execute(query, params or ())
+            
+            if fetchone:
+                result = cursor.fetchone()
+                if result:
+                    # Convert tuple to dict for PostgreSQL
+                    columns = [desc[0] for desc in cursor.description]
+                    return dict(zip(columns, result))
+                return None
+            elif fetch:
+                results = cursor.fetchall()
+                columns = [desc[0] for desc in cursor.description]
+                return [dict(zip(columns, row)) for row in results]
+            else:
+                return cursor.rowcount
         else:
-            cursor = conn.execute(query, params or ())
-            conn.commit()
-            return cursor.lastrowid
+            # SQLite queries
+            if fetchone:
+                result = conn.execute(query, params or ()).fetchone()
+                return dict(result) if result else None
+            elif fetch:
+                results = conn.execute(query, params or ()).fetchall()
+                return [dict(row) for row in results]
+            else:
+                cursor = conn.execute(query, params or ())
+                conn.commit()
+                return cursor.lastrowid
             
     except Exception as e:
         print(f"Database query error: {e}")

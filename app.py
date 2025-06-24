@@ -243,34 +243,59 @@ def register():
         
         conn = get_db_connection()
         if not conn:
+            print("❌ Registration failed: No database connection")
             flash('Database error. Please try again.', 'error')
             return render_template('register.html')
         
         try:
             # Check if username exists
-            user = conn.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+            if USING_POSTGRESQL:
+                cursor = conn.cursor()
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                user = cursor.fetchone()
+            else:
+                user = conn.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+            
             if user:
+                print(f"❌ Registration failed: Username '{username}' already exists")
                 flash('Username already exists!', 'error')
                 return render_template('register.html')
             
             # Create new user
             password_hash = generate_password_hash(password)
-            cursor = conn.execute(
-                'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-                (username, password_hash)
-            )
-            user_id = cursor.lastrowid
-            conn.commit()
             
-            # Create sample habits for new user
-            create_sample_habits(user_id)
+            if USING_POSTGRESQL:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id',
+                    (username, password_hash)
+                )
+                result = cursor.fetchone()
+                user_id = result[0] if result else None
+            else:
+                cursor = conn.execute(
+                    'INSERT INTO users (username, password_hash) VALUES (?, ?)',
+                    (username, password_hash)
+                )
+                conn.commit()
+                user_id = cursor.lastrowid
             
-            flash('Registration successful! Please log in.', 'success')
-            return redirect(url_for('login'))
+            if user_id:
+                print(f"✅ User created successfully: {username} (ID: {user_id})")
+                # Create sample habits for new user
+                create_sample_habits(user_id)
+                print(f"✅ Sample habits created for user: {username}")
+                
+                flash('Registration successful! Please log in.', 'success')
+                return redirect(url_for('login'))
+            else:
+                print("❌ Registration failed: No user ID returned")
+                flash('Registration failed. Please try again.', 'error')
+                return render_template('register.html')
             
-        except sqlite3.Error as e:
+        except Exception as e:
+            print(f"❌ Registration error: {e}")
             flash('Registration failed. Please try again.', 'error')
-            print(f"Registration error: {e}")
         finally:
             conn.close()
     

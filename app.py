@@ -224,23 +224,32 @@ def index():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """User registration"""
+    print(f"🔍 Register route called - Method: {request.method}")
+    
     if request.method == 'POST':
+        print("🔍 Processing POST request for registration")
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         
+        print(f"🔍 Form data - Username: '{username}', Password length: {len(password) if password else 0}")
+        
         # Validation
         if not username or not password:
+            print("❌ Validation failed: Missing username or password")
             flash('Username and password are required!', 'error')
             return render_template('register.html')
         
         if len(username) < 3:
+            print("❌ Validation failed: Username too short")
             flash('Username must be at least 3 characters long!', 'error')
             return render_template('register.html')
         
         if len(password) < 6:
+            print("❌ Validation failed: Password too short")
             flash('Password must be at least 6 characters long!', 'error')
             return render_template('register.html')
         
+        print("✅ Validation passed, attempting database connection")
         conn = get_db_connection()
         if not conn:
             print("❌ Registration failed: No database connection")
@@ -248,6 +257,7 @@ def register():
             return render_template('register.html')
         
         try:
+            print("🔍 Checking if username exists...")
             # Check if username exists
             if USING_POSTGRESQL:
                 cursor = conn.cursor()
@@ -261,6 +271,7 @@ def register():
                 flash('Username already exists!', 'error')
                 return render_template('register.html')
             
+            print("🔍 Creating new user...")
             # Create new user
             password_hash = generate_password_hash(password)
             
@@ -299,6 +310,7 @@ def register():
         finally:
             conn.close()
     
+    print("🔍 Showing registration form (GET request)")
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])

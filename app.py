@@ -1,186 +1,88 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
-import sqlite3
-import psycopg
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import os
-from collections import defaultdict, Counter
 
 app = Flask(__name__)
-# Use environment variable for secret key in production, fallback for development
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 
-# Database setup - Try PostgreSQL first, fallback to SQLite
+# Supabase connection - get from environment variable
 DATABASE_URL = os.environ.get('DATABASE_URL')
-IS_PRODUCTION = DATABASE_URL is not None
-USING_POSTGRESQL = False
 
-if IS_PRODUCTION:
-    # Production: Try PostgreSQL first, fallback to SQLite in /tmp
-    DATABASE = DATABASE_URL
-    SQLITE_FALLBACK = '/tmp/habits.db'
-else:
-    # Local development: Use SQLite in current directory
-    DATABASE = 'habits.db'
-    SQLITE_FALLBACK = 'habits.db'
+if not DATABASE_URL:
+    print("❌ ERROR: DATABASE_URL environment variable not set!")
+    print("Please set your Supabase connection string:")
+    print("export DATABASE_URL='postgresql://postgres.xxxxx:[password]@aws-0-us-east-1.pooler.supabase.com:6543/postgres'")
 
 def get_db_connection():
-    """Create database connection - try PostgreSQL first, fallback to SQLite"""
-    global USING_POSTGRESQL
-    
-    # Try PostgreSQL first if in production
-    if IS_PRODUCTION and not USING_POSTGRESQL:
-        try:
-            conn = psycopg.connect(DATABASE_URL)
-            conn.autocommit = True
-            USING_POSTGRESQL = True
-            print("✅ Connected to PostgreSQL successfully!")
-            return conn
-        except Exception as e:
-            print(f"❌ PostgreSQL connection failed: {e}")
-            print("🔄 Falling back to SQLite...")
-            USING_POSTGRESQL = False
-    
-    # Use SQLite (either local development or fallback)
+    """Create database connection to Supabase PostgreSQL"""
+    if not DATABASE_URL:
+        print("❌ No DATABASE_URL configured")
+        return None
+        
     try:
-        db_path = SQLITE_FALLBACK if IS_PRODUCTION else DATABASE
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        print(f"✅ Connected to SQLite successfully at {db_path}!")
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         return conn
     except Exception as e:
-        print(f"❌ SQLite connection error: {e}")
+        print(f"❌ Database connection error: {e}")
         return None
 
 def init_db():
-    """Initialize database with tables and sample data"""
+    """Initialize database with tables"""
     conn = get_db_connection()
     if not conn:
+        print("❌ Could not connect to database for initialization")
         return False
     
     try:
-        if USING_POSTGRESQL:
-            # PostgreSQL table creation
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    username VARCHAR(255) UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS habits (
-                    id SERIAL PRIMARY KEY,
-                    user_id INTEGER NOT NULL REFERENCES users(id),
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    category TEXT NOT NULL,
-                    active BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS habit_entries (
-                    id SERIAL PRIMARY KEY,
-                    habit_id INTEGER NOT NULL REFERENCES habits(id),
-                    date DATE NOT NULL,
-                    completed BOOLEAN NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(habit_id, date)
-                )
-            ''')
-        else:
-            # SQLite table creation
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS habits (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    category TEXT NOT NULL,
-                    active BOOLEAN DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users (id)
-                )
-            ''')
-            
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS habit_entries (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    habit_id INTEGER NOT NULL,
-                    date DATE NOT NULL,
-                    completed BOOLEAN NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (habit_id) REFERENCES habits (id),
-                    UNIQUE(habit_id, date)
-                )
-            ''')
-            
-            conn.commit()
+        cursor = conn.cursor()
         
-        print("Database initialized successfully!")
+        print("🔄 Creating database tables...")
+        
+        # Create users table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Create habits table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS habits (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                name TEXT NOT NULL,
+                description TEXT,
+                category TEXT NOT NULL,
+                active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Create habit_entries table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS habit_entries (
+                id SERIAL PRIMARY KEY,
+                habit_id INTEGER NOT NULL REFERENCES habits(id),
+                date DATE NOT NULL,
+                completed BOOLEAN NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(habit_id, date)
+            )
+        ''')
+        
+        conn.commit()
+        print("✅ Database tables created successfully!")
         return True
         
     except Exception as e:
-        print(f"Database initialization error: {e}")
+        print(f"❌ Database initialization error: {e}")
         return False
-    finally:
-        conn.close()
-
-def execute_query(query, params=None, fetch=False, fetchone=False):
-    """Universal database query executor for both PostgreSQL and SQLite"""
-    conn = get_db_connection()
-    if not conn:
-        return None
-    
-    try:
-        if USING_POSTGRESQL:
-            cursor = conn.cursor()
-            cursor.execute(query, params or ())
-            
-            if fetchone:
-                result = cursor.fetchone()
-                if result:
-                    # Convert tuple to dict for PostgreSQL
-                    columns = [desc[0] for desc in cursor.description]
-                    return dict(zip(columns, result))
-                return None
-            elif fetch:
-                results = cursor.fetchall()
-                columns = [desc[0] for desc in cursor.description]
-                return [dict(zip(columns, row)) for row in results]
-            else:
-                return cursor.rowcount
-        else:
-            # SQLite queries
-            if fetchone:
-                result = conn.execute(query, params or ()).fetchone()
-                return dict(result) if result else None
-            elif fetch:
-                results = conn.execute(query, params or ()).fetchall()
-                return [dict(row) for row in results]
-            else:
-                cursor = conn.execute(query, params or ())
-                conn.commit()
-                return cursor.lastrowid
-            
-    except Exception as e:
-        print(f"Database query error: {e}")
-        return None
     finally:
         conn.close()
 
@@ -199,20 +101,26 @@ def create_sample_habits(user_id):
         return
     
     try:
+        cursor = conn.cursor()
         for name, description, category in sample_habits:
-            conn.execute(
-                'INSERT INTO habits (user_id, name, description, category) VALUES (?, ?, ?, ?)',
+            cursor.execute(
+                'INSERT INTO habits (user_id, name, description, category) VALUES (%s, %s, %s, %s)',
                 (user_id, name, description, category)
             )
         conn.commit()
-    except sqlite3.Error as e:
-        print(f"Error creating sample habits: {e}")
+        print(f"✅ Sample habits created for user: {user_id}")
+    except Exception as e:
+        print(f"❌ Error creating sample habits: {e}")
     finally:
         conn.close()
 
 # Initialize database on startup
-if not os.path.exists(DATABASE):
+print("🚀 Starting Habit Tracker with Supabase...")
+if DATABASE_URL:
+    print("✅ DATABASE_URL found, initializing database...")
     init_db()
+else:
+    print("❌ DATABASE_URL not found!")
 
 @app.route('/')
 def index():
@@ -227,90 +135,69 @@ def register():
     print(f"🔍 Register route called - Method: {request.method}")
     
     if request.method == 'POST':
-        print("🔍 Processing POST request for registration")
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         
-        print(f"🔍 Form data - Username: '{username}', Password length: {len(password) if password else 0}")
+        print(f"🔍 Registration attempt - Username: '{username}'")
         
         # Validation
         if not username or not password:
-            print("❌ Validation failed: Missing username or password")
             flash('Username and password are required!', 'error')
             return render_template('register.html')
         
         if len(username) < 3:
-            print("❌ Validation failed: Username too short")
             flash('Username must be at least 3 characters long!', 'error')
             return render_template('register.html')
         
         if len(password) < 6:
-            print("❌ Validation failed: Password too short")
             flash('Password must be at least 6 characters long!', 'error')
             return render_template('register.html')
         
-        print("✅ Validation passed, attempting database connection")
         conn = get_db_connection()
         if not conn:
-            print("❌ Registration failed: No database connection")
             flash('Database error. Please try again.', 'error')
             return render_template('register.html')
         
         try:
-            print("🔍 Checking if username exists...")
+            cursor = conn.cursor()
+            
             # Check if username exists
-            if USING_POSTGRESQL:
-                cursor = conn.cursor()
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user = cursor.fetchone()
-            else:
-                user = conn.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
             
             if user:
-                print(f"❌ Registration failed: Username '{username}' already exists")
+                print(f"❌ Username '{username}' already exists")
                 flash('Username already exists!', 'error')
                 return render_template('register.html')
             
-            print("🔍 Creating new user...")
             # Create new user
             password_hash = generate_password_hash(password)
             
-            if USING_POSTGRESQL:
-                cursor = conn.cursor()
-                cursor.execute(
-                    'INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id',
-                    (username, password_hash)
-                )
-                result = cursor.fetchone()
-                user_id = result[0] if result else None
-            else:
-                cursor = conn.execute(
-                    'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-                    (username, password_hash)
-                )
-                conn.commit()
-                user_id = cursor.lastrowid
+            cursor.execute(
+                'INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id',
+                (username, password_hash)
+            )
+            result = cursor.fetchone()
+            user_id = result['id'] if result else None
+            conn.commit()
             
             if user_id:
                 print(f"✅ User created successfully: {username} (ID: {user_id})")
                 # Create sample habits for new user
                 create_sample_habits(user_id)
-                print(f"✅ Sample habits created for user: {username}")
                 
                 flash('Registration successful! Please log in.', 'success')
                 return redirect(url_for('login'))
             else:
                 print("❌ Registration failed: No user ID returned")
                 flash('Registration failed. Please try again.', 'error')
-                return render_template('register.html')
-            
+                
         except Exception as e:
             print(f"❌ Registration error: {e}")
             flash('Registration failed. Please try again.', 'error')
         finally:
             conn.close()
     
-    print("🔍 Showing registration form (GET request)")
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -330,10 +217,12 @@ def login():
             return render_template('login.html')
         
         try:
-            user = conn.execute(
-                'SELECT id, username, password_hash FROM users WHERE username = ?',
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT id, username, password_hash FROM users WHERE username = %s',
                 (username,)
-            ).fetchone()
+            )
+            user = cursor.fetchone()
             
             if user and check_password_hash(user['password_hash'], password):
                 session['user_id'] = user['id']
@@ -343,7 +232,7 @@ def login():
             else:
                 flash('Invalid username or password!', 'error')
                 
-        except sqlite3.Error as e:
+        except Exception as e:
             flash('Login failed. Please try again.', 'error')
             print(f"Login error: {e}")
         finally:
@@ -370,42 +259,47 @@ def dashboard():
         return redirect(url_for('index'))
     
     try:
+        cursor = conn.cursor()
         user_id = session['user_id']
         today = datetime.now().date()
         
         # Get total active habits
-        total_habits = conn.execute(
-            'SELECT COUNT(*) as count FROM habits WHERE user_id = ? AND active = 1',
+        cursor.execute(
+            'SELECT COUNT(*) as count FROM habits WHERE user_id = %s AND active = true',
             (user_id,)
-        ).fetchone()['count']
+        )
+        total_habits = cursor.fetchone()['count']
         
         # Get today's completed habits
-        completed_today = conn.execute('''
+        cursor.execute('''
             SELECT COUNT(*) as count FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ? AND he.date = ? AND he.completed = 1 AND h.active = 1
-        ''', (user_id, today)).fetchone()['count']
+            WHERE h.user_id = %s AND he.date = %s AND he.completed = true AND h.active = true
+        ''', (user_id, today))
+        completed_today = cursor.fetchone()['count']
         
         # Calculate overall completion rate (last 30 days)
         thirty_days_ago = today - timedelta(days=30)
-        completion_stats = conn.execute('''
+        cursor.execute('''
             SELECT 
                 COUNT(*) as total_entries,
-                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed_entries
+                SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as completed_entries
             FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ? AND he.date >= ? AND h.active = 1
-        ''', (user_id, thirty_days_ago)).fetchone()
+            WHERE h.user_id = %s AND he.date >= %s AND h.active = true
+        ''', (user_id, thirty_days_ago))
+        completion_stats = cursor.fetchone()
         
         completion_rate = 0
         if completion_stats['total_entries'] > 0:
             completion_rate = round((completion_stats['completed_entries'] / completion_stats['total_entries']) * 100)
         
         # Count habits with active streaks (current streaks > 0)
-        habits = conn.execute('''
+        cursor.execute('''
             SELECT id, name FROM habits 
-            WHERE user_id = ? AND active = 1
-        ''', (user_id,)).fetchall()
+            WHERE user_id = %s AND active = true
+        ''', (user_id,))
+        habits = cursor.fetchall()
         
         active_streaks = 0
         for habit in habits:
@@ -415,13 +309,14 @@ def dashboard():
         
         # Get recent activity (last 7 days)
         week_ago = today - timedelta(days=7)
-        recent_entries = conn.execute('''
+        cursor.execute('''
             SELECT he.date, he.completed, h.name as habit_name
             FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ? AND he.date >= ? AND h.active = 1
+            WHERE h.user_id = %s AND he.date >= %s AND h.active = true
             ORDER BY he.date DESC, h.name
-        ''', (user_id, week_ago)).fetchall()
+        ''', (user_id, week_ago))
+        recent_entries = cursor.fetchall()
         
         return render_template('dashboard.html',
                              total_habits=total_habits,
@@ -431,7 +326,7 @@ def dashboard():
                              recent_entries=recent_entries,
                              today_str=today.strftime('%Y-%m-%d'))
         
-    except sqlite3.Error as e:
+    except Exception as e:
         flash('Error loading dashboard.', 'error')
         print(f"Dashboard error: {e}")
         return redirect(url_for('index'))
@@ -450,11 +345,12 @@ def habits():
         return redirect(url_for('index'))
     
     try:
+        cursor = conn.cursor()
         user_id = session['user_id']
-        habits = conn.execute('''
+        cursor.execute('''
             SELECT id, name, description, category, active, created_at
             FROM habits 
-            WHERE user_id = ? 
+            WHERE user_id = %s 
             ORDER BY 
                 CASE category 
                     WHEN 'Health' THEN 1
@@ -464,11 +360,12 @@ def habits():
                     WHEN 'Personal' THEN 5
                     ELSE 6
                 END, name
-        ''', (user_id,)).fetchall()
+        ''', (user_id,))
+        habits = cursor.fetchall()
         
         return render_template('habits.html', habits=habits)
         
-    except sqlite3.Error as e:
+    except Exception as e:
         flash('Error loading habits.', 'error')
         print(f"Habits error: {e}")
         return redirect(url_for('dashboard'))
@@ -496,15 +393,16 @@ def add_habit():
             return render_template('add_habit.html')
         
         try:
-            conn.execute(
-                'INSERT INTO habits (user_id, name, description, category) VALUES (?, ?, ?, ?)',
+            cursor = conn.cursor()
+            cursor.execute(
+                'INSERT INTO habits (user_id, name, description, category) VALUES (%s, %s, %s, %s)',
                 (session['user_id'], name, description, category)
             )
             conn.commit()
             flash('Habit added successfully!', 'success')
             return redirect(url_for('habits'))
             
-        except sqlite3.Error as e:
+        except Exception as e:
             flash('Error adding habit.', 'error')
             print(f"Add habit error: {e}")
         finally:
@@ -524,11 +422,13 @@ def edit_habit(habit_id):
         return redirect(url_for('habits'))
     
     try:
+        cursor = conn.cursor()
         # Get habit details
-        habit = conn.execute(
-            'SELECT * FROM habits WHERE id = ? AND user_id = ?',
+        cursor.execute(
+            'SELECT * FROM habits WHERE id = %s AND user_id = %s',
             (habit_id, session['user_id'])
-        ).fetchone()
+        )
+        habit = cursor.fetchone()
         
         if not habit:
             flash('Habit not found!', 'error')
@@ -544,10 +444,10 @@ def edit_habit(habit_id):
                 flash('Habit name and category are required!', 'error')
                 return render_template('edit_habit.html', habit=habit)
             
-            conn.execute('''
+            cursor.execute('''
                 UPDATE habits 
-                SET name = ?, description = ?, category = ?, active = ?
-                WHERE id = ? AND user_id = ?
+                SET name = %s, description = %s, category = %s, active = %s
+                WHERE id = %s AND user_id = %s
             ''', (name, description, category, active, habit_id, session['user_id']))
             conn.commit()
             
@@ -556,7 +456,7 @@ def edit_habit(habit_id):
         
         return render_template('edit_habit.html', habit=habit)
         
-    except sqlite3.Error as e:
+    except Exception as e:
         flash('Error editing habit.', 'error')
         print(f"Edit habit error: {e}")
         return redirect(url_for('habits'))
@@ -586,13 +486,14 @@ def weekly_view():
         return redirect(url_for('dashboard'))
     
     try:
+        cursor = conn.cursor()
         user_id = session['user_id']
         
         # Get active habits in the same order as habits page
-        habits = conn.execute('''
+        cursor.execute('''
             SELECT id, name, category
             FROM habits 
-            WHERE user_id = ? AND active = 1
+            WHERE user_id = %s AND active = true
             ORDER BY 
                 CASE category 
                     WHEN 'Health' THEN 1
@@ -602,22 +503,24 @@ def weekly_view():
                     WHEN 'Personal' THEN 5
                     ELSE 6
                 END, name
-        ''', (user_id,)).fetchall()
+        ''', (user_id,))
+        habits = cursor.fetchall()
         
         # Get habit entries for the week
-        entries = conn.execute('''
+        cursor.execute('''
             SELECT habit_id, date, completed
             FROM habit_entries
-            WHERE habit_id IN (SELECT id FROM habits WHERE user_id = ? AND active = 1)
-            AND date BETWEEN ? AND ?
-        ''', (user_id, week_dates[0], week_dates[6])).fetchall()
+            WHERE habit_id IN (SELECT id FROM habits WHERE user_id = %s AND active = true)
+            AND date BETWEEN %s AND %s
+        ''', (user_id, week_dates[0], week_dates[6]))
+        entries = cursor.fetchall()
         
         # Organize entries by habit_id and date
         entries_dict = {}
         for entry in entries:
             if entry['habit_id'] not in entries_dict:
                 entries_dict[entry['habit_id']] = {}
-            entries_dict[entry['habit_id']][entry['date']] = entry['completed']
+            entries_dict[entry['habit_id']][str(entry['date'])] = entry['completed']
         
         # Calculate daily success rates
         daily_stats = []
@@ -670,7 +573,7 @@ def weekly_view():
                              daily_stats=daily_stats,
                              habit_stats=habit_stats)
         
-    except sqlite3.Error as e:
+    except Exception as e:
         flash('Error loading weekly view.', 'error')
         print(f"Weekly view error: {e}")
         return redirect(url_for('dashboard'))
@@ -698,49 +601,55 @@ def toggle_habit():
         if not conn:
             return jsonify({'success': False, 'error': 'Database error'})
         
-        # Verify habit belongs to user
-        habit = conn.execute(
-            'SELECT id FROM habits WHERE id = ? AND user_id = ? AND active = 1',
-            (habit_id, session['user_id'])
-        ).fetchone()
-        
-        if not habit:
-            conn.close()
-            return jsonify({'success': False, 'error': 'Habit not found'})
-        
-        # Check current entry
-        current_entry = conn.execute(
-            'SELECT completed FROM habit_entries WHERE habit_id = ? AND date = ?',
-            (habit_id, date_str)
-        ).fetchone()
-        
-        if current_entry is None:
-            # No entry exists, create as completed
-            conn.execute(
-                'INSERT INTO habit_entries (habit_id, date, completed) VALUES (?, ?, ?)',
-                (habit_id, date_str, True)
+        try:
+            cursor = conn.cursor()
+            
+            # Verify habit belongs to user
+            cursor.execute(
+                'SELECT id FROM habits WHERE id = %s AND user_id = %s AND active = true',
+                (habit_id, session['user_id'])
             )
-            new_status = 'completed'
-        elif current_entry['completed']:
-            # Currently completed, mark as not completed
-            conn.execute(
-                'UPDATE habit_entries SET completed = ? WHERE habit_id = ? AND date = ?',
-                (False, habit_id, date_str)
-            )
-            new_status = 'missed'
-        else:
-            # Currently not completed, delete entry (make it empty)
-            conn.execute(
-                'DELETE FROM habit_entries WHERE habit_id = ? AND date = ?',
+            habit = cursor.fetchone()
+            
+            if not habit:
+                return jsonify({'success': False, 'error': 'Habit not found'})
+            
+            # Check current entry
+            cursor.execute(
+                'SELECT completed FROM habit_entries WHERE habit_id = %s AND date = %s',
                 (habit_id, date_str)
             )
-            new_status = 'empty'
+            current_entry = cursor.fetchone()
+            
+            if current_entry is None:
+                # No entry exists, create as completed
+                cursor.execute(
+                    'INSERT INTO habit_entries (habit_id, date, completed) VALUES (%s, %s, %s)',
+                    (habit_id, date_str, True)
+                )
+                new_status = 'completed'
+            elif current_entry['completed']:
+                # Currently completed, mark as not completed
+                cursor.execute(
+                    'UPDATE habit_entries SET completed = %s WHERE habit_id = %s AND date = %s',
+                    (False, habit_id, date_str)
+                )
+                new_status = 'missed'
+            else:
+                # Currently not completed, delete entry (make it empty)
+                cursor.execute(
+                    'DELETE FROM habit_entries WHERE habit_id = %s AND date = %s',
+                    (habit_id, date_str)
+                )
+                new_status = 'empty'
+            
+            conn.commit()
+            return jsonify({'success': True, 'status': new_status})
+            
+        finally:
+            conn.close()
         
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True, 'status': new_status})
-        
-    except (ValueError, KeyError, sqlite3.Error) as e:
+    except (ValueError, KeyError, Exception) as e:
         print(f"Toggle habit error: {e}")
         return jsonify({'success': False, 'error': 'Server error'})
 
@@ -748,66 +657,72 @@ def calculate_current_streak(habit_id, conn):
     """Calculate current streak for a habit"""
     today = datetime.now().date()
     
-    # Get all entries for this habit, ordered by date descending
-    entries = conn.execute('''
-        SELECT date, completed FROM habit_entries 
-        WHERE habit_id = ? AND date <= ?
-        ORDER BY date DESC
-    ''', (habit_id, today)).fetchall()
-    
-    if not entries:
-        return 0
-    
-    # Check if there's a gap from today
-    streak = 0
-    current_date = today
-    
-    for entry in entries:
-        entry_date = datetime.strptime(entry['date'], '%Y-%m-%d').date()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT date, completed FROM habit_entries 
+            WHERE habit_id = %s AND date <= %s
+            ORDER BY date DESC
+        ''', (habit_id, today))
+        entries = cursor.fetchall()
         
-        # If there's a gap, break
-        if entry_date < current_date - timedelta(days=1):
-            break
+        if not entries:
+            return 0
         
-        # If this date is completed, increment streak
-        if entry_date == current_date and entry['completed']:
-            streak += 1
-            current_date -= timedelta(days=1)
-        elif entry_date == current_date and not entry['completed']:
-            # If today/yesterday was missed, streak is broken
-            break
-        elif entry_date < current_date:
-            # We've moved past the current date we're checking
-            current_date = entry_date
-            if entry['completed']:
-                streak += 1
-            else:
+        streak = 0
+        current_date = today
+        
+        for entry in entries:
+            entry_date = entry['date']
+            
+            if entry_date < current_date - timedelta(days=1):
                 break
-    
-    return streak
+            
+            if entry_date == current_date and entry['completed']:
+                streak += 1
+                current_date -= timedelta(days=1)
+            elif entry_date == current_date and not entry['completed']:
+                break
+            elif entry_date < current_date:
+                current_date = entry_date
+                if entry['completed']:
+                    streak += 1
+                else:
+                    break
+        
+        return streak
+    except Exception as e:
+        print(f"Calculate streak error: {e}")
+        return 0
 
 def calculate_longest_streak(habit_id, conn):
     """Calculate longest streak for a habit"""
-    entries = conn.execute('''
-        SELECT date, completed FROM habit_entries 
-        WHERE habit_id = ? 
-        ORDER BY date
-    ''', (habit_id,)).fetchall()
-    
-    if not entries:
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT date, completed FROM habit_entries 
+            WHERE habit_id = %s 
+            ORDER BY date
+        ''', (habit_id,))
+        entries = cursor.fetchall()
+        
+        if not entries:
+            return 0
+        
+        max_streak = 0
+        current_streak = 0
+        
+        for entry in entries:
+            if entry['completed']:
+                current_streak += 1
+                max_streak = max(max_streak, current_streak)
+            else:
+                current_streak = 0
+        
+        return max_streak
+    except Exception as e:
+        print(f"Calculate longest streak error: {e}")
         return 0
-    
-    max_streak = 0
-    current_streak = 0
-    
-    for entry in entries:
-        if entry['completed']:
-            current_streak += 1
-            max_streak = max(max_streak, current_streak)
-        else:
-            current_streak = 0
-    
-    return max_streak
 
 @app.route('/analytics')
 def analytics():
@@ -821,6 +736,7 @@ def analytics():
         return redirect(url_for('dashboard'))
     
     try:
+        cursor = conn.cursor()
         user_id = session['user_id']
         today = datetime.now().date()
         thirty_days_ago = today - timedelta(days=30)
@@ -828,23 +744,24 @@ def analytics():
         fourteen_days_ago = today - timedelta(days=14)
         
         # Overall completion rate (last 30 days)
-        completion_stats = conn.execute('''
+        cursor.execute('''
             SELECT 
                 COUNT(*) as total_entries,
-                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed_entries
+                SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as completed_entries
             FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ? AND he.date >= ? AND h.active = 1
-        ''', (user_id, thirty_days_ago)).fetchone()
+            WHERE h.user_id = %s AND he.date >= %s AND h.active = true
+        ''', (user_id, thirty_days_ago))
+        completion_stats = cursor.fetchone()
         
         overall_completion_rate = 0
         if completion_stats['total_entries'] > 0:
             overall_completion_rate = round((completion_stats['completed_entries'] / completion_stats['total_entries']) * 100)
         
         # Best day of week analysis
-        day_stats = conn.execute('''
+        cursor.execute('''
             SELECT 
-                CASE CAST(strftime('%w', he.date) AS INTEGER)
+                CASE EXTRACT(DOW FROM he.date)
                     WHEN 0 THEN 'Sunday'
                     WHEN 1 THEN 'Monday'
                     WHEN 2 THEN 'Tuesday'
@@ -854,14 +771,15 @@ def analytics():
                     WHEN 6 THEN 'Saturday'
                 END as day_name,
                 COUNT(*) as total_entries,
-                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed_entries
+                SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as completed_entries
             FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ? AND he.date >= ? AND h.active = 1
-            GROUP BY strftime('%w', he.date)
-            HAVING total_entries > 0
-            ORDER BY (CAST(completed_entries AS FLOAT) / total_entries) DESC
-        ''', (user_id, thirty_days_ago)).fetchall()
+            WHERE h.user_id = %s AND he.date >= %s AND h.active = true
+            GROUP BY EXTRACT(DOW FROM he.date)
+            HAVING COUNT(*) > 0
+            ORDER BY (CAST(SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) DESC
+        ''', (user_id, thirty_days_ago))
+        day_stats = cursor.fetchall()
         
         best_day = None
         if day_stats:
@@ -871,23 +789,25 @@ def analytics():
             }
         
         # Week comparison (this week vs last week)
-        this_week_stats = conn.execute('''
+        cursor.execute('''
             SELECT 
                 COUNT(*) as total_entries,
-                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed_entries
+                SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as completed_entries
             FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ? AND he.date >= ? AND h.active = 1
-        ''', (user_id, seven_days_ago)).fetchone()
+            WHERE h.user_id = %s AND he.date >= %s AND h.active = true
+        ''', (user_id, seven_days_ago))
+        this_week_stats = cursor.fetchone()
         
-        last_week_stats = conn.execute('''
+        cursor.execute('''
             SELECT 
                 COUNT(*) as total_entries,
-                SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed_entries
+                SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as completed_entries
             FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ? AND he.date >= ? AND he.date < ? AND h.active = 1
-        ''', (user_id, fourteen_days_ago, seven_days_ago)).fetchone()
+            WHERE h.user_id = %s AND he.date >= %s AND he.date < %s AND h.active = true
+        ''', (user_id, fourteen_days_ago, seven_days_ago))
+        last_week_stats = cursor.fetchone()
         
         # Calculate week comparison
         this_week_rate = 0
@@ -912,10 +832,10 @@ def analytics():
             week_trend = f"{this_week_rate}% (new data)"
         
         # Individual habit statistics (in same order as weekly view)
-        habits = conn.execute('''
+        cursor.execute('''
             SELECT id, name, category
             FROM habits 
-            WHERE user_id = ? AND active = 1
+            WHERE user_id = %s AND active = true
             ORDER BY 
                 CASE category 
                     WHEN 'Health' THEN 1
@@ -925,7 +845,8 @@ def analytics():
                     WHEN 'Personal' THEN 5
                     ELSE 6
                 END, name
-        ''', (user_id,)).fetchall()
+        ''', (user_id,))
+        habits = cursor.fetchall()
         
         habit_stats = []
         for habit in habits:
@@ -936,13 +857,14 @@ def analytics():
             longest_streak = calculate_longest_streak(habit['id'], conn)
             
             # Completion rate (last 30 days)
-            habit_completion = conn.execute('''
+            cursor.execute('''
                 SELECT 
                     COUNT(*) as total_entries,
-                    SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed_entries
+                    SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as completed_entries
                 FROM habit_entries
-                WHERE habit_id = ? AND date >= ?
-            ''', (habit['id'], thirty_days_ago)).fetchone()
+                WHERE habit_id = %s AND date >= %s
+            ''', (habit['id'], thirty_days_ago))
+            habit_completion = cursor.fetchone()
             
             completion_rate = 0
             if habit_completion['total_entries'] > 0:
@@ -972,7 +894,7 @@ def analytics():
                              recommendations=recommendations,
                              progress_insights=progress_insights)
         
-    except sqlite3.Error as e:
+    except Exception as e:
         flash('Error loading analytics.', 'error')
         print(f"Analytics error: {e}")
         return redirect(url_for('dashboard'))
@@ -986,19 +908,22 @@ def generate_recommendations(user_id, conn):
     thirty_days_ago = today - timedelta(days=30)
     
     try:
+        cursor = conn.cursor()
+        
         # Get habits with low completion rates
-        low_performers = conn.execute('''
+        cursor.execute('''
             SELECT h.name, h.category,
                    COUNT(he.id) as total_entries,
-                   SUM(CASE WHEN he.completed = 1 THEN 1 ELSE 0 END) as completed_entries
+                   SUM(CASE WHEN he.completed = true THEN 1 ELSE 0 END) as completed_entries
             FROM habits h
-            LEFT JOIN habit_entries he ON h.id = he.habit_id AND he.date >= ?
-            WHERE h.user_id = ? AND h.active = 1
+            LEFT JOIN habit_entries he ON h.id = he.habit_id AND he.date >= %s
+            WHERE h.user_id = %s AND h.active = true
             GROUP BY h.id, h.name, h.category
-            HAVING total_entries > 5
-            ORDER BY (CAST(completed_entries AS FLOAT) / total_entries)
+            HAVING COUNT(he.id) > 5
+            ORDER BY (CAST(SUM(CASE WHEN he.completed = true THEN 1 ELSE 0 END) AS FLOAT) / COUNT(he.id))
             LIMIT 2
-        ''', (thirty_days_ago, user_id)).fetchall()
+        ''', (thirty_days_ago, user_id))
+        low_performers = cursor.fetchall()
         
         for habit in low_performers:
             rate = round((habit['completed_entries'] / habit['total_entries']) * 100)
@@ -1006,16 +931,17 @@ def generate_recommendations(user_id, conn):
                 recommendations.append(f"Focus on '{habit['name']}' - only {rate}% completion rate. Try setting a specific time or linking it to an existing routine.")
         
         # Check for weekend vs weekday patterns
-        weekend_performance = conn.execute('''
+        cursor.execute('''
             SELECT 
-                AVG(CASE WHEN CAST(strftime('%w', he.date) AS INTEGER) IN (0, 6) 
+                AVG(CASE WHEN EXTRACT(DOW FROM he.date) IN (0, 6) 
                     THEN CASE WHEN he.completed THEN 100.0 ELSE 0.0 END END) as weekend_rate,
-                AVG(CASE WHEN CAST(strftime('%w', he.date) AS INTEGER) NOT IN (0, 6) 
+                AVG(CASE WHEN EXTRACT(DOW FROM he.date) NOT IN (0, 6) 
                     THEN CASE WHEN he.completed THEN 100.0 ELSE 0.0 END END) as weekday_rate
             FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ? AND he.date >= ? AND h.active = 1
-        ''', (user_id, thirty_days_ago)).fetchone()
+            WHERE h.user_id = %s AND he.date >= %s AND h.active = true
+        ''', (user_id, thirty_days_ago))
+        weekend_performance = cursor.fetchone()
         
         if weekend_performance['weekend_rate'] and weekend_performance['weekday_rate']:
             weekend_rate = round(weekend_performance['weekend_rate'])
@@ -1027,24 +953,26 @@ def generate_recommendations(user_id, conn):
                 recommendations.append(f"Great weekend consistency ({weekend_rate}%)! Try applying your weekend strategies to weekdays ({weekday_rate}%).")
         
         # Check for habits that haven't been tracked recently
-        inactive_habits = conn.execute('''
+        cursor.execute('''
             SELECT h.name, MAX(he.date) as last_entry
             FROM habits h
             LEFT JOIN habit_entries he ON h.id = he.habit_id
-            WHERE h.user_id = ? AND h.active = 1
+            WHERE h.user_id = %s AND h.active = true
             GROUP BY h.id, h.name
-            HAVING last_entry IS NULL OR last_entry < ?
-        ''', (user_id, today - timedelta(days=3))).fetchall()
+            HAVING MAX(he.date) IS NULL OR MAX(he.date) < %s
+        ''', (user_id, today - timedelta(days=3)))
+        inactive_habits = cursor.fetchall()
         
         if inactive_habits:
             habit_names = [h['name'] for h in inactive_habits[:2]]
             recommendations.append(f"Haven't tracked '{habit_names[0]}' recently. Consistency is key - even small steps count!")
         
         # Positive reinforcement for good streaks
-        habits_for_streaks = conn.execute('''
+        cursor.execute('''
             SELECT id, name FROM habits h
-            WHERE h.user_id = ? AND h.active = 1
-        ''', (user_id,)).fetchall()
+            WHERE h.user_id = %s AND h.active = true
+        ''', (user_id,))
+        habits_for_streaks = cursor.fetchall()
         
         max_streak = 0
         best_habit = None
@@ -1064,7 +992,7 @@ def generate_recommendations(user_id, conn):
         
         return recommendations
         
-    except sqlite3.Error as e:
+    except Exception as e:
         print(f"Recommendations error: {e}")
         return ["Unable to generate recommendations at this time."]
 
@@ -1074,36 +1002,41 @@ def generate_progress_insights(user_id, conn):
     today = datetime.now().date()
     
     try:
+        cursor = conn.cursor()
+        
         # Compare first week vs recent week
-        first_week_end = conn.execute('''
+        cursor.execute('''
             SELECT MIN(date) as first_date FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ?
-        ''', (user_id,)).fetchone()
+            WHERE h.user_id = %s
+        ''', (user_id,))
+        first_week_end = cursor.fetchone()
         
         if first_week_end and first_week_end['first_date']:
-            first_date = datetime.strptime(first_week_end['first_date'], '%Y-%m-%d').date()
+            first_date = first_week_end['first_date']
             first_week_start = first_date + timedelta(days=7)
             
             if today > first_week_start:
-                first_week_stats = conn.execute('''
+                cursor.execute('''
                     SELECT 
                         COUNT(*) as total,
-                        SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed
+                        SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as completed
                     FROM habit_entries he
                     JOIN habits h ON he.habit_id = h.id
-                    WHERE h.user_id = ? AND he.date BETWEEN ? AND ?
-                ''', (user_id, first_date, first_week_start)).fetchone()
+                    WHERE h.user_id = %s AND he.date BETWEEN %s AND %s
+                ''', (user_id, first_date, first_week_start))
+                first_week_stats = cursor.fetchone()
                 
                 recent_week_start = today - timedelta(days=7)
-                recent_week_stats = conn.execute('''
+                cursor.execute('''
                     SELECT 
                         COUNT(*) as total,
-                        SUM(CASE WHEN completed = 1 THEN 1 ELSE 0 END) as completed
+                        SUM(CASE WHEN completed = true THEN 1 ELSE 0 END) as completed
                     FROM habit_entries he
                     JOIN habits h ON he.habit_id = h.id
-                    WHERE h.user_id = ? AND he.date >= ? AND h.active = 1
-                ''', (user_id, recent_week_start)).fetchone()
+                    WHERE h.user_id = %s AND he.date >= %s AND h.active = true
+                ''', (user_id, recent_week_start))
+                recent_week_stats = cursor.fetchone()
                 
                 if first_week_stats['total'] > 0 and recent_week_stats['total'] > 0:
                     first_rate = round((first_week_stats['completed'] / first_week_stats['total']) * 100)
@@ -1117,28 +1050,29 @@ def generate_progress_insights(user_id, conn):
                         insights.append(f"Your completion rate was {first_rate}% initially and is {recent_rate}% recently. Consider what worked well in the beginning.")
         
         # Total habits completed insight
-        total_completed = conn.execute('''
+        cursor.execute('''
             SELECT COUNT(*) as total FROM habit_entries he
             JOIN habits h ON he.habit_id = h.id
-            WHERE h.user_id = ? AND he.completed = 1
-        ''', (user_id,)).fetchone()['total']
+            WHERE h.user_id = %s AND he.completed = true
+        ''', (user_id,))
+        total_completed = cursor.fetchone()['total']
         
         if total_completed > 0:
             insights.append(f"You've completed {total_completed} habit tasks total - every completion builds momentum!")
         
         return insights
         
-    except sqlite3.Error as e:
+    except Exception as e:
         print(f"Progress insights error: {e}")
         return ["Unable to generate insights at this time."]
 
 if __name__ == '__main__':
-    print("Starting Habit Tracker...")
-    print("Database file:", DATABASE)
-    
-    # Get port from environment variable (Render provides this) or default to 5000
-    import os
     port = int(os.environ.get('PORT', 5000))
     
-    print(f"Access the app at: http://127.0.0.1:{port}")
-    app.run(debug=False, host='0.0.0.0', port=port)
+    if DATABASE_URL:
+        print(f"✅ Starting app on port {port} with Supabase database")
+        print(f"🌐 Access the app at: http://127.0.0.1:{port}")
+    else:
+        print("❌ WARNING: No DATABASE_URL set!")
+    
+    app.run(debug=True, host='127.0.0.1', port=port)

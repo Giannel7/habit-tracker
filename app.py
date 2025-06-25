@@ -1069,10 +1069,20 @@ def generate_progress_insights(user_id, conn):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     
+    # Check if we're in production (Render sets this)
+    is_production = os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT')
+    
     if DATABASE_URL:
-        print(f"✅ Starting app on port {port} with Supabase database")
-        print(f"🌐 Access the app at: http://127.0.0.1:{port}")
+        if is_production:
+            print(f"✅ Starting production app on port {port} with Supabase database")
+        else:
+            print(f"✅ Starting development app on port {port} with Supabase database")
+            print(f"🌐 Access the app at: http://127.0.0.1:{port}")
     else:
         print("❌ WARNING: No DATABASE_URL set!")
     
-    app.run(debug=True, host='127.0.0.1', port=port)
+    # Production settings vs Development settings
+    if is_production:
+        app.run(debug=False, host='0.0.0.0', port=port)
+    else:
+        app.run(debug=True, host='127.0.0.1', port=port)

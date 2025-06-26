@@ -372,7 +372,13 @@ def habits():
                     ELSE 6
                 END, name
         ''', (user_id,))
-        habits = cursor.fetchall()
+        habits_raw = cursor.fetchall()
+        
+        # Convert RealDictRow objects to regular dictionaries
+        habits = []
+        for habit in habits_raw:
+            habit_dict = dict(habit)
+            habits.append(habit_dict)
         
         print(f"✅ HABITS ROUTE: Query successful, found {len(habits)} habits")
         print("🔍 HABITS ROUTE: Attempting to render template...")
@@ -381,6 +387,8 @@ def habits():
         
     except Exception as e:
         print(f"❌ HABITS ROUTE: Exception occurred: {e}")
+        import traceback
+        traceback.print_exc()
         flash('Error loading habits.', 'error')
         return redirect(url_for('dashboard'))
     finally:
@@ -443,11 +451,14 @@ def edit_habit(habit_id):
             'SELECT * FROM habits WHERE id = %s AND user_id = %s',
             (habit_id, session['user_id'])
         )
-        habit = cursor.fetchone()
+        habit_raw = cursor.fetchone()
         
-        if not habit:
+        if not habit_raw:
             flash('Habit not found!', 'error')
             return redirect(url_for('habits'))
+        
+        # Convert to regular dictionary
+        habit = dict(habit_raw)
         
         if request.method == 'POST':
             name = request.form.get('name', '').strip()
@@ -574,7 +585,7 @@ def weekly_view():
             
             success_rate = round((completed / total * 100) if total > 0 else 0)
             habit_stats.append({
-                'habit': habit,
+                'habit': dict(habit),
                 'success_rate': success_rate,
                 'completed': completed,
                 'total': total
@@ -886,7 +897,7 @@ def analytics():
                 completion_rate = round((habit_completion['completed_entries'] / habit_completion['total_entries']) * 100)
             
             habit_stats.append({
-                'habit': habit,
+                'habit': dict(habit),
                 'current_streak': current_streak,
                 'longest_streak': longest_streak,
                 'completion_rate': completion_rate,

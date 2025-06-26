@@ -5,6 +5,8 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import os
 
+# Force redeploy - updated habits route debugging
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 

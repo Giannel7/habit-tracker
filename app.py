@@ -336,17 +336,27 @@ def dashboard():
 @app.route('/habits')
 def habits():
     """Manage habits page"""
+    print("🔍 HABITS ROUTE: Starting...")
+    
     if 'user_id' not in session:
+        print("❌ HABITS ROUTE: No user_id in session")
         return redirect(url_for('login'))
+    
+    print(f"✅ HABITS ROUTE: User ID {session['user_id']} found in session")
     
     conn = get_db_connection()
     if not conn:
+        print("❌ HABITS ROUTE: Database connection failed")
         flash('Database error.', 'error')
         return redirect(url_for('dashboard'))
+    
+    print("✅ HABITS ROUTE: Database connection successful")
     
     try:
         cursor = conn.cursor()
         user_id = session['user_id']
+        
+        print(f"🔍 HABITS ROUTE: Executing query for user {user_id}")
         
         cursor.execute('''
             SELECT id, name, description, category, active, created_at
@@ -364,13 +374,17 @@ def habits():
         ''', (user_id,))
         habits = cursor.fetchall()
         
+        print(f"✅ HABITS ROUTE: Query successful, found {len(habits)} habits")
+        print("🔍 HABITS ROUTE: Attempting to render template...")
+        
         return render_template('habits.html', habits=habits)
         
     except Exception as e:
+        print(f"❌ HABITS ROUTE: Exception occurred: {e}")
         flash('Error loading habits.', 'error')
-        print(f"Habits error: {e}")
         return redirect(url_for('dashboard'))
     finally:
+        print("🔍 HABITS ROUTE: Closing database connection")
         conn.close()
 
 @app.route('/add_habit', methods=['GET', 'POST'])

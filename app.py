@@ -374,7 +374,12 @@ def habits():
         habits = cursor.fetchall()
         
         print(f"✅ Habits route: Found {len(habits)} habits")
-        return render_template('habits.html', habits=habits)
+        
+        # TEMPORARY: Return simple text instead of template
+        habit_names = [h['name'] for h in habits]
+        return f"<h1>Habits Debug</h1><p>Found {len(habits)} habits:</p><ul>{''.join([f'<li>{name}</li>' for name in habit_names])}</ul><a href='/dashboard'>Back to Dashboard</a>"
+        
+        # return render_template('habits.html', habits=habits)
         
     except Exception as e:
         print(f"❌ Habits route error: {e}")

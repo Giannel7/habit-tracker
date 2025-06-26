@@ -336,26 +336,17 @@ def dashboard():
 @app.route('/habits')
 def habits():
     """Manage habits page"""
-    print(f"🔍 Habits route called")
-    print(f"🔍 Session contents: {dict(session)}")
-    print(f"🔍 user_id in session: {'user_id' in session}")
-    
     if 'user_id' not in session:
-        print("❌ No user_id in session - redirecting to login")
         return redirect(url_for('login'))
-    
-    print(f"🔍 User ID from session: {session['user_id']}")
     
     conn = get_db_connection()
     if not conn:
-        print("❌ Habits route: Database connection failed")
         flash('Database error.', 'error')
         return redirect(url_for('dashboard'))
     
     try:
         cursor = conn.cursor()
         user_id = session['user_id']
-        print(f"🔍 Habits route: Loading habits for user {user_id}")
         
         cursor.execute('''
             SELECT id, name, description, category, active, created_at
@@ -373,17 +364,11 @@ def habits():
         ''', (user_id,))
         habits = cursor.fetchall()
         
-        print(f"✅ Habits route: Found {len(habits)} habits")
-        
-        # TEMPORARY: Return simple text instead of template
-        habit_names = [h['name'] for h in habits]
-        return f"<h1>Habits Debug</h1><p>Found {len(habits)} habits:</p><ul>{''.join([f'<li>{name}</li>' for name in habit_names])}</ul><a href='/dashboard'>Back to Dashboard</a>"
-        
-        # return render_template('habits.html', habits=habits)
+        return render_template('habits.html', habits=habits)
         
     except Exception as e:
-        print(f"❌ Habits route error: {e}")
         flash('Error loading habits.', 'error')
+        print(f"Habits error: {e}")
         return redirect(url_for('dashboard'))
     finally:
         conn.close()

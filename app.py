@@ -5,8 +5,6 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import os
 
-# Force redeploy - updated habits route debugging
-
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 
@@ -338,8 +336,15 @@ def dashboard():
 @app.route('/habits')
 def habits():
     """Manage habits page"""
+    print(f"🔍 Habits route called")
+    print(f"🔍 Session contents: {dict(session)}")
+    print(f"🔍 user_id in session: {'user_id' in session}")
+    
     if 'user_id' not in session:
+        print("❌ No user_id in session - redirecting to login")
         return redirect(url_for('login'))
+    
+    print(f"🔍 User ID from session: {session['user_id']}")
     
     conn = get_db_connection()
     if not conn:
